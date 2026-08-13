@@ -8,10 +8,23 @@ api_bp = Blueprint("api", __name__)
 
 @api_bp.route("/notes", methods=["GET"])
 def get_notes():
-    conn = get_db_connection(current_app.config["DATABASE_PATH"])
-    notes = conn.execute("SELECT id, title, body, filename, created_at FROM notes ORDER BY created_at DESC").fetchall()
+    conn = get_db_connection(current_app.config["DATABASE_URL"])
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, title, body, filename, created_at
+        FROM notes
+        ORDER BY created_at DESC
+        """
+    )
+
+    notes = cursor.fetchall()
+
+    cursor.close()
     conn.close()
-    return jsonify([dict(note) for note in notes])
+
+    return jsonify([dict(note) for note in notes]), 200
 
 
 @api_bp.route("/notes", methods=["POST"])
@@ -23,26 +36,43 @@ def create_note():
     uploaded_file = request.files.get("attachment")
     if uploaded_file and allowed_file(uploaded_file.filename):
         filename = secure_filename(uploaded_file.filename)
-        destination = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
+        destination = os.path.join(
+            current_app.config["UPLOAD_FOLDER"],
+            filename
+        )
         uploaded_file.save(destination)
 
-    conn = get_db_connection(current_app.config["DATABASE_PATH"])
+    conn = get_db_connection(current_app.config["DATABASE_URL"])
     cursor = conn.cursor()
+
     cursor.execute(
-        "INSERT INTO notes (title, body, filename) VALUES (?, ?, ?)",
+        """
+        INSERT INTO notes (title, body, filename)
+        VALUES (%s, %s, %s)
+        RETURNING id
+        """,
         (title, body, filename),
     )
+
+    row = cursor.fetchone()
+    note_id = row["id"]
+
     conn.commit()
-    note_id = cursor.lastrowid
+    cursor.close()
     conn.close()
 
-    return jsonify({"id": note_id, "title": title, "body": body, "filename": filename}), 201
+    return jsonify({
+        "id": note_id,
+        "title": title,
+        "body": body,
+        "filename": filename,
+    }), 201
 
 
 @api_bp.route("/notes/<int:note_id>", methods=["GET"])
 def get_note(note_id):
-    conn = get_db_connection(current_app.config["DATABASE_PATH"])
-    note = conn.execute("SELECT id, title, body, filename, created_at FROM notes WHERE id = ?", (note_id,)).fetchone()
+    conn = get_db_connection(current_app.config["DATABASE_URL"])
+    note = conn.execute("SELECT id, title, body, filename, created_at FROM notes WHERE id = %s", (note_id,)).fetchone()
     conn.close()
     if note is None:
         return jsonify({"error": "Note not found"}), 404
@@ -51,9 +81,9 @@ def get_note(note_id):
 
 @api_bp.route("/notes/<int:note_id>", methods=["DELETE"])
 def delete_note(note_id):
-    conn = get_db_connection(current_app.config["DATABASE_PATH"])
+    conn = get_db_connection(current_app.config["DATABASE_URL"])
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    cursor.execute("DELETE FROM notes WHERE id = %s", (note_id,))
     conn.commit()
     deleted = cursor.rowcount
     conn.close()
