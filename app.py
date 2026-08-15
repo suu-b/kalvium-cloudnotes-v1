@@ -1,23 +1,25 @@
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 from api.routes import api_bp
 from utils.helpers import init_db
+from dotenv import load_dotenv
+
 import os
+
+load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-DATABASE_PATH = os.path.join(BASE_DIR, "database", "cloudnotes.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["DATABASE_PATH"] = DATABASE_PATH
+app.config["DATABASE_URL"] = DATABASE_URL
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
 app.register_blueprint(api_bp, url_prefix="/api")
-
-@app.before_first_request
-def startup():
-    init_db(DATABASE_PATH)
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+init_db(DATABASE_URL)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route("/")
 def home():
